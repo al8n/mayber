@@ -1,13 +1,13 @@
 [package]
-name = "template-rs"
+name = "mayber"
 version = "0.0.0"
 edition = "2021"
-repository = "https://github.com/al8n/template-rs"
-homepage = "https://github.com/al8n/template-rs"
-documentation = "https://docs.rs/template-rs"
+repository = "https://github.com/al8n/mayber"
+homepage = "https://github.com/al8n/mayber"
+documentation = "https://docs.rs/mayber"
 description = "A template for creating Rust open-source repo on GitHub"
 license = "MIT OR Apache-2.0"
-rust-version = "1.73"
+rust-version = "1.56"
 
 [[bench]]
 path = "benches/foo.rs"
@@ -19,7 +19,12 @@ default = ["std"]
 alloc = []
 std = []
 
+serde = ["dep:serde_core"]
+
 [dependencies]
+rustversion = "1"
+
+serde_core = { version = "1", optional = true, default-features = false }
 
 [dev-dependencies]
 criterion = "0.7"
