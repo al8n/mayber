@@ -32,180 +32,27 @@ Add this to your `Cargo.toml`:
 mayber = "0.1"
 ```
 
-## Quick Start
-
-```rust
-use mayber::{Maybe, MaybeRef};
-
-// Accept either a reference or an owned value
-fn process_string(s: MaybeRef<String>) {
-    println!("Length: {}", s.deref().len());
-}
-
-let owned = String::from("owned");
-let borrowed = String::from("borrowed");
-
-process_string(MaybeRef::Owned(owned));
-process_string(MaybeRef::Ref(&borrowed));
-```
-
-## Core Types
-
-### `Maybe<R, T>`
-
-The core enum that can hold either a reference or an owned value:
-
-```rust
-use mayber::Maybe;
-
-let ref_variant: Maybe<&str, String> = Maybe::Ref("hello");
-let owned_variant: Maybe<&str, String> = Maybe::Owned("world".to_string());
-
-assert!(ref_variant.is_ref());
-assert!(owned_variant.is_owned());
-```
-
-### `MaybeRef<'a, T>`
-
-A type alias for `Maybe<&'a T, T>` - the most common use case:
-
-```rust
-use mayber::MaybeRef;
-
-fn accepts_either(s: MaybeRef<String>) {
-    // Works transparently with both references and owned values
-    println!("{}", s);
-}
-```
-
-### `MaybeMut<'a, T>`
-
-A type alias for `Maybe<&'a mut T, T>` for mutable references:
-
-```rust
-use mayber::MaybeMut;
-
-fn modify(mut s: MaybeMut<String>) {
-    s.deref_mut().push_str(" world");
-}
-```
-
-## Common Operations
-
-### Checking Variants
-
-```rust
-use mayber::Maybe;
-
-let x: Maybe<&str, String> = Maybe::Ref("hello");
-assert!(x.is_ref());
-assert!(!x.is_owned());
-```
-
-### Converting to Owned
-
-```rust
-use mayber::MaybeRef;
-
-let hello = "hello".to_string();
-let x: MaybeRef<String> = MaybeRef::Ref(&hello);
-let owned: String = x.into_owned(); // Clones if reference, moves if owned
-assert_eq!(owned, "hello");
-```
-
-### Mapping Values
-
-```rust
-use mayber::Maybe;
-
-let x: Maybe<&str, String> = Maybe::Owned("hello".to_string());
-let y = x.map(|s| s.len(), |s| s.len());
-// y is Maybe::Owned(5)
-assert!(y.is_owned());
-```
-
-### Working with Deref
-
-The `Maybe` type implements `Deref` when both types deref to a common target:
-
-```rust
-use mayber::Maybe;
-
-let x: Maybe<&str, String> = Maybe::Owned("hello".to_string());
-// Both &str and String deref to str, so we can use str methods
-assert_eq!(x.len(), 5);
-```
-
 ## Features
 
-### `default` Features
-
-- **`std`**: Enables standard library support, including I/O trait implementations (`Read`, `Write`, `Seek`, `BufRead`)
-
-### Optional Features
-
-- **`alloc`**: Enables allocation support without requiring the full standard library
-- **`serde`**: Provides `Serialize` and `Deserialize` implementations
-
-Enable features in your `Cargo.toml`:
+- **`std`** (default): Standard library support with I/O traits (`Read`, `Write`, `Seek`, `BufRead`)
+- **`alloc`**: Allocation support for `no_std` environments
+- **`serde`**: `Serialize`/`Deserialize` implementations
 
 ```toml
+# With serde
 [dependencies]
 mayber = { version = "0.1", features = ["serde"] }
-```
 
-### `no_std` Support
-
-`mayber` supports `no_std` environments:
-
-```toml
-[dependencies]
-mayber = { version = "0.1", default-features = false }
-```
-
-With allocator support:
-
-```toml
-[dependencies]
+# no_std with alloc
 mayber = { version = "0.1", default-features = false, features = ["alloc"] }
 ```
 
-## Advanced Usage
+## When to Use
 
-### Working with `Option`
-
-`Maybe<Option<R>, Option<T>>` has special methods:
-
-```rust
-use mayber::Maybe;
-
-let x: Maybe<Option<&i32>, Option<i32>> = Maybe::Owned(Some(42));
-assert!(x.is_some());
-assert!(!x.is_none());
-```
-
-### MaybeUninit Support
-
-For advanced use cases with uninitialized memory:
-
-```rust
-use mayber::Maybe;
-use core::mem::MaybeUninit;
-
-let mut uninit: MaybeUninit<Maybe<&str, String>> = Maybe::uninit();
-// ... initialize the value ...
-// let value = unsafe { uninit.assume_init() };
-```
-
-## When to Use `mayber`
-
-Use `mayber` when:
-
-- You want to avoid cloning data but need the flexibility to own it when necessary
-- You're building APIs that should accept both references and owned values
-- You need more flexibility than `Cow<T>` provides
-- You want to reduce allocations in hot code paths
-- You're working with borrowed data that might occasionally need to be owned
+- Accept both references and owned values without cloning
+- Build flexible APIs that work with borrowed or owned data
+- Need mutable reference or owned value flexibility (`MaybeMut`)
+- Reduce allocations in performance-critical paths
 
 ## Comparison with `Cow`
 
@@ -213,20 +60,14 @@ Use `mayber` when:
 |---------|--------------|---------------|
 | Purpose | Clone-on-write for specific types | Generic reference or owned value |
 | Type flexibility | Limited to `ToOwned` types | Works with any `R` and `T` pair |
-| Common use case | `Cow<'a, str>`, `Cow<'a, [T]>` | `Maybe<&'a T, T>` for any `T` |
-| Deref behavior | Always derefs to borrowed form | Derefs when `R: Deref<Target = T>` |
+| Common use case | `Cow<'a, str>`, `Cow<'a, [T]>` | `MaybeRef<'a, T>`, `MaybeMut<'a, T>` |
+| Deref behavior | Always derefs to borrowed form | `MaybeRef`/`MaybeMut` implement `Deref`/`DerefMut` |
 
 ## Trait Implementations
 
-`Maybe<R, T>` implements many standard traits:
-
-- `Deref`, `DerefMut` (when `R: Deref<Target = T>`)
-- `PartialEq`, `Eq`, `PartialOrd`, `Ord`
-- `Clone`, `Copy`, `Hash`, `Debug`, `Display`
-- `Default` (creates `Owned(T::default())`)
-- `From<T>` and `From<&T>`
-- I/O traits when `std` feature is enabled: `Read`, `Write`, `Seek`, `BufRead`
-- `Serialize`, `Deserialize` when `serde` feature is enabled
+- **`MaybeRef<T>`**: `Deref`, `AsRef`, `Borrow`, `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Clone`, `Copy`, `Hash`, `Debug`, `Display`
+- **`MaybeMut<T>`**: `Deref`, `DerefMut`, `AsRef`, `AsMut`, `Borrow`, `BorrowMut`, I/O traits (`std` feature)
+- **`Maybe<R, T>`**: `Default`, `From<T>`, `From<&T>`, `Deserialize` (`serde` feature)
 
 ## Credit
 
@@ -243,11 +84,12 @@ Apache License (Version 2.0).
 
 See [LICENSE-APACHE](LICENSE-APACHE), [LICENSE-MIT](LICENSE-MIT) for details.
 
-Copyright (c) 2021 Al Liu.
+Copyright (c) 2025 Al Liu.
+
+Copyright (c) 
 
 [Github-url]: https://github.com/al8n/mayber/
 [CI-url]: https://github.com/al8n/mayber/actions/workflows/ci.yml
 [doc-url]: https://docs.rs/mayber
 [crates-url]: https://crates.io/crates/mayber
 [codecov-url]: https://app.codecov.io/gh/al8n/mayber/
-[zh-cn-url]: https://github.com/al8n/mayber/tree/main/README-zh_CN.md

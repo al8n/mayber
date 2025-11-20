@@ -1,18 +1,15 @@
 [package]
 name = "mayber"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2021"
 repository = "https://github.com/al8n/mayber"
 homepage = "https://github.com/al8n/mayber"
 documentation = "https://docs.rs/mayber"
-description = "A template for creating Rust open-source repo on GitHub"
+description = "A zero-cost enum for handling either references or owned values with a unified interface"
 license = "MIT OR Apache-2.0"
 rust-version = "1.56"
-
-[[bench]]
-path = "benches/foo.rs"
-name = "foo"
-harness = false
+categories = ["data-structures", "rust-patterns", "no-std", "no-std::no-alloc"]
+keywords = ["reference", "maybe", "cow", "zero-cost", "deref"]
 
 [features]
 default = ["std"]
@@ -25,10 +22,6 @@ serde = ["dep:serde_core"]
 rustversion = "1"
 
 serde_core = { version = "1", optional = true, default-features = false }
-
-[dev-dependencies]
-criterion = "0.7"
-tempfile = "3"
 
 [profile.bench]
 opt-level = 3

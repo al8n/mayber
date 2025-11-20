@@ -11,81 +11,11 @@ extern crate alloc as std;
 extern crate std;
 
 use core::{
-  borrow::Borrow,
+  borrow::{Borrow, BorrowMut},
   fmt,
   mem::MaybeUninit,
   ops::{Deref, DerefMut},
 };
-
-mod ref_or_val_sealed {
-  pub trait Sealed<T> {}
-}
-
-/// A trait that allows abstracting over references to or owned values of a `T`.
-///
-/// This trait is sealed: you cannot implement it yourself.
-pub trait RefOrVal<'a, T: 'a>:
-  ref_or_val_sealed::Sealed<T> + Borrow<T> + Into<MaybeRef<'a, T>>
-{
-  /// Project the referential properties of this type onto another type.
-  ///
-  /// For example, `<&Foo>::Proj<Bar> = &Bar` but `<Foo>::Proj<Bar> = Bar`.
-  #[doc(hidden)]
-  type Proj<U: 'a>;
-
-  /// The target type when dereferencing.
-  #[doc(hidden)]
-  type DerefTarget: ?Sized;
-
-  #[doc(hidden)]
-  fn map_maybe<R: 'a>(
-    self,
-    f: impl FnOnce(&'a T) -> &'a R,
-    g: impl FnOnce(T) -> R,
-  ) -> Self::Proj<R>;
-
-  #[doc(hidden)]
-  fn as_deref_target(&self) -> &Self::DerefTarget;
-}
-
-impl<T> ref_or_val_sealed::Sealed<T> for &T {}
-impl<'a, T> RefOrVal<'a, T> for &'a T {
-  type Proj<U: 'a> = &'a U;
-  type DerefTarget = T;
-
-  fn map_maybe<R: 'a>(
-    self,
-    f: impl FnOnce(&'a T) -> &'a R,
-    _g: impl FnOnce(T) -> R,
-  ) -> Self::Proj<R> {
-    f(self)
-  }
-
-  fn as_deref_target(&self) -> &Self::DerefTarget {
-    self
-  }
-}
-
-impl<T> ref_or_val_sealed::Sealed<T> for T {}
-impl<'a, T: 'a> RefOrVal<'a, T> for T
-where
-  T: Deref,
-{
-  type Proj<U: 'a> = U;
-  type DerefTarget = T::Target;
-
-  fn map_maybe<R: 'a>(
-    self,
-    _f: impl FnOnce(&'a T) -> &'a R,
-    g: impl FnOnce(T) -> R,
-  ) -> Self::Proj<R> {
-    g(self)
-  }
-
-  fn as_deref_target(&self) -> &Self::DerefTarget {
-    self.deref()
-  }
-}
 
 /// A type alias for a [`Maybe`] enum that holds either a reference or an owned value.
 ///
@@ -97,7 +27,7 @@ where
 /// use mayber::MaybeRef;
 ///
 /// fn accepts_either(s: MaybeRef<String>) {
-///     println!("Length: {}", s.deref().len());
+///     println!("Length: {}", s.len());
 /// }
 ///
 /// let owned = String::from("owned");
@@ -118,7 +48,7 @@ pub type MaybeRef<'a, T> = Maybe<&'a T, T>;
 /// use mayber::MaybeMut;
 ///
 /// fn modify(mut s: MaybeMut<String>) {
-///     s.deref_mut().push_str(" world");
+///     s.push_str(" world");
 /// }
 ///
 /// let mut owned = String::from("hello");
@@ -154,277 +84,185 @@ pub enum Maybe<R, T> {
   Owned(T),
 }
 
-/// A helper type that implements `Deref<Target = T>` for `Maybe<R, T>` where `R: Deref<Target = T>`.
-///
-/// This allows `Maybe<&T, T>` (where T doesn't implement Deref) to access T's methods through
-/// deref coercion. Obtain this type by calling [`Maybe::deref()`].
-pub struct MaybeDeref<'a, R, T>(&'a Maybe<R, T>);
+impl<T> Borrow<T> for MaybeRef<'_, T> {
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  fn borrow(&self) -> &T {
+    self.as_ref()
+  }
+}
 
-impl<R, T> Deref for MaybeDeref<'_, R, T>
-where
-  R: Deref<Target = T>,
-{
+impl<T> Borrow<T> for MaybeMut<'_, T> {
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  fn borrow(&self) -> &T {
+    self.as_ref()
+  }
+}
+
+impl<T> BorrowMut<T> for MaybeMut<'_, T> {
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  fn borrow_mut(&mut self) -> &mut T {
+    self.as_mut()
+  }
+}
+
+impl<T> AsRef<T> for MaybeRef<'_, T> {
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  fn as_ref(&self) -> &T {
+    match self {
+      Maybe::Ref(r) => r,
+      Maybe::Owned(t) => t,
+    }
+  }
+}
+
+impl<T> AsRef<T> for MaybeMut<'_, T> {
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  fn as_ref(&self) -> &T {
+    match self {
+      Maybe::Ref(r) => r,
+      Maybe::Owned(t) => t,
+    }
+  }
+}
+
+impl<T> AsMut<T> for MaybeMut<'_, T> {
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  fn as_mut(&mut self) -> &mut T {
+    match self {
+      Maybe::Ref(r) => r,
+      Maybe::Owned(t) => t,
+    }
+  }
+}
+
+impl<T> Deref for MaybeRef<'_, T> {
   type Target = T;
-
-  #[cfg_attr(not(tarpaulin), inline(always))]
-  fn deref(&self) -> &T {
-    match self.0 {
-      Maybe::Ref(r) => r.deref(),
-      Maybe::Owned(t) => t,
-    }
-  }
-}
-
-/// A helper type that implements `DerefMut<Target = T>` for `Maybe<R, T>` where `R: DerefMut<Target = T>`.
-///
-/// Obtain this type by calling [`Maybe::deref_mut()`].
-pub struct MaybeDerefMut<'a, R, T>(&'a mut Maybe<R, T>);
-
-impl<R, T> Deref for MaybeDerefMut<'_, R, T>
-where
-  R: Deref<Target = T>,
-{
-  type Target = T;
-
-  #[cfg_attr(not(tarpaulin), inline(always))]
-  fn deref(&self) -> &T {
-    match &*self.0 {
-      Maybe::Ref(r) => r.deref(),
-      Maybe::Owned(t) => t,
-    }
-  }
-}
-
-impl<R, T> DerefMut for MaybeDerefMut<'_, R, T>
-where
-  R: DerefMut<Target = T>,
-{
-  #[cfg_attr(not(tarpaulin), inline(always))]
-  fn deref_mut(&mut self) -> &mut T {
-    match &mut *self.0 {
-      Maybe::Ref(r) => r.deref_mut(),
-      Maybe::Owned(t) => t,
-    }
-  }
-}
-
-// impl<R, T> Borrow<T::Target> for Maybe<R, T>
-// where
-//   R: Deref<Target = <T as Deref>::Target>,
-//   T: Deref,
-// {
-//   #[cfg_attr(not(tarpaulin), inline(always))]
-//   fn borrow(&self) -> &T::Target {
-//     self
-//   }
-// }
-
-// impl<R, T> BorrowMut<T::Target> for &mut Maybe<R, T>
-// where
-//   R: DerefMut<Target = <T as Deref>::Target>,
-//   T: DerefMut,
-// {
-//   #[cfg_attr(not(tarpaulin), inline(always))]
-//   fn borrow_mut(&mut self) -> &mut T::Target {
-//     self
-//   }
-// }
-
-impl<R, T> AsRef<T::Target> for Maybe<R, T>
-where
-  R: Deref<Target = <T as Deref>::Target>,
-  T: Deref,
-{
-  #[cfg_attr(not(tarpaulin), inline(always))]
-  fn as_ref(&self) -> &T::Target {
-    self
-  }
-}
-
-impl<R, T> AsMut<T::Target> for Maybe<R, T>
-where
-  R: DerefMut<Target = <T as Deref>::Target>,
-  T: DerefMut,
-{
-  #[cfg_attr(not(tarpaulin), inline(always))]
-  fn as_mut(&mut self) -> &mut T::Target {
-    self
-  }
-}
-
-impl<R, T> Deref for Maybe<R, T>
-where
-  R: Deref<Target = <T as Deref>::Target>,
-  T: Deref,
-{
-  type Target = <T as Deref>::Target;
 
   #[cfg_attr(not(tarpaulin), inline(always))]
   fn deref(&self) -> &Self::Target {
     match self {
-      Maybe::Ref(r) => r.deref(),
+      Maybe::Ref(r) => r,
       Maybe::Owned(t) => t,
     }
   }
 }
 
-impl<R, T> DerefMut for Maybe<R, T>
-where
-  R: DerefMut<Target = <T as Deref>::Target>,
-  T: DerefMut,
-{
+impl<T> Deref for MaybeMut<'_, T> {
+  type Target = T;
+
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  fn deref(&self) -> &Self::Target {
+    match self {
+      Maybe::Ref(r) => r,
+      Maybe::Owned(t) => t,
+    }
+  }
+}
+
+impl<T> DerefMut for MaybeMut<'_, T> {
   #[cfg_attr(not(tarpaulin), inline(always))]
   fn deref_mut(&mut self) -> &mut Self::Target {
     match self {
-      Maybe::Ref(r) => r.deref_mut(),
+      Maybe::Ref(r) => r,
       Maybe::Owned(t) => t,
     }
   }
 }
 
-impl<R, T> PartialEq for Maybe<R, T>
+impl<T> PartialEq for MaybeRef<'_, T>
 where
-  R: Deref<Target = T>,
   T: PartialEq,
 {
   #[cfg_attr(not(tarpaulin), inline(always))]
   fn eq(&self, other: &Self) -> bool {
-    match (self, other) {
-      (Maybe::Ref(a), Maybe::Ref(b)) => a.deref().eq(b.deref()),
-      (Maybe::Ref(a), Maybe::Owned(b)) => a.deref().eq(b),
-      (Maybe::Owned(a), Maybe::Ref(b)) => a.eq(b.deref()),
-      (Maybe::Owned(a), Maybe::Owned(b)) => a.eq(b),
-    }
+    (**self).eq(&**other)
   }
 }
 
-impl<R, T, O> PartialEq<&O> for Maybe<R, T>
+impl<T, O> PartialEq<&O> for MaybeRef<'_, T>
 where
-  R: Deref<Target = T>,
   T: PartialEq<O>,
 {
   #[cfg_attr(not(tarpaulin), inline(always))]
   fn eq(&self, other: &&O) -> bool {
-    match self {
-      Maybe::Ref(r) => r.deref().eq(*other),
-      Maybe::Owned(t) => t.eq(*other),
-    }
+    (**self).eq(*other)
   }
 }
 
-impl<R, T> Eq for Maybe<R, T>
-where
-  R: Deref<Target = T>,
-  T: Eq,
-{
-}
+impl<T> Eq for MaybeRef<'_, T> where T: Eq {}
 
-impl<R, T> PartialOrd for Maybe<R, T>
+impl<T> PartialOrd for MaybeRef<'_, T>
 where
-  R: Deref<Target = T>,
   T: PartialOrd,
 {
   #[cfg_attr(not(tarpaulin), inline(always))]
   fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-    match (self, other) {
-      (Maybe::Ref(a), Maybe::Ref(b)) => a.deref().partial_cmp(b.deref()),
-      (Maybe::Ref(a), Maybe::Owned(b)) => a.deref().partial_cmp(b),
-      (Maybe::Owned(a), Maybe::Ref(b)) => a.partial_cmp(b.deref()),
-      (Maybe::Owned(a), Maybe::Owned(b)) => a.partial_cmp(b),
-    }
+    (**self).partial_cmp(&**other)
   }
 }
 
-impl<R, T, O> PartialOrd<&O> for Maybe<R, T>
+impl<T, O> PartialOrd<&O> for MaybeRef<'_, T>
 where
-  R: Deref<Target = T>,
   T: PartialOrd<O>,
 {
   #[cfg_attr(not(tarpaulin), inline(always))]
   fn partial_cmp(&self, other: &&O) -> Option<core::cmp::Ordering> {
-    match self {
-      Maybe::Ref(r) => r.deref().partial_cmp(*other),
-      Maybe::Owned(t) => t.partial_cmp(*other),
-    }
+    (**self).partial_cmp(*other)
   }
 }
 
-impl<R, T> Ord for Maybe<R, T>
+impl<T> Ord for MaybeRef<'_, T>
 where
-  R: Deref<Target = T>,
   T: Ord,
 {
   #[cfg_attr(not(tarpaulin), inline(always))]
   fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-    match (self, other) {
-      (Maybe::Ref(a), Maybe::Ref(b)) => a.deref().cmp(b.deref()),
-      (Maybe::Ref(a), Maybe::Owned(b)) => a.deref().cmp(b),
-      (Maybe::Owned(a), Maybe::Ref(b)) => a.cmp(b.deref()),
-      (Maybe::Owned(a), Maybe::Owned(b)) => a.cmp(b),
-    }
+    (**self).cmp(&**other)
   }
 }
 
-impl<R, T> fmt::Display for Maybe<R, T>
+impl<T> fmt::Display for MaybeRef<'_, T>
 where
-  R: Deref<Target = T>,
   T: fmt::Display,
 {
   #[cfg_attr(not(tarpaulin), inline(always))]
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    match self {
-      Maybe::Ref(r) => r.deref().fmt(f),
-      Maybe::Owned(t) => t.fmt(f),
-    }
+    (**self).fmt(f)
   }
 }
 
-impl<R, T> fmt::Debug for Maybe<R, T>
+impl<T> fmt::Debug for MaybeRef<'_, T>
 where
-  R: Deref<Target = T>,
   T: fmt::Debug,
 {
   #[cfg_attr(not(tarpaulin), inline(always))]
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    match self {
-      Maybe::Ref(r) => r.deref().fmt(f),
-      Maybe::Owned(t) => t.fmt(f),
-    }
+    (**self).fmt(f)
   }
 }
 
-impl<R, T> Clone for Maybe<R, T>
+impl<T> Clone for MaybeRef<'_, T>
 where
-  R: Clone,
   T: Clone,
 {
   #[cfg_attr(not(tarpaulin), inline(always))]
   fn clone(&self) -> Self {
     match self {
-      Maybe::Ref(r) => Maybe::Ref(r.clone()),
+      Maybe::Ref(r) => Maybe::Ref(*r),
       Maybe::Owned(t) => Maybe::Owned(t.clone()),
     }
   }
 }
 
-impl<R, T> Copy for Maybe<R, T>
-where
-  R: Copy,
-  T: Copy,
-{
-}
+impl<T> Copy for MaybeRef<'_, T> where T: Copy {}
 
-impl<R, T> core::hash::Hash for Maybe<R, T>
+impl<T> core::hash::Hash for MaybeRef<'_, T>
 where
-  R: Deref<Target = T>,
   T: core::hash::Hash,
 {
   #[cfg_attr(not(tarpaulin), inline(always))]
   fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-    match self {
-      Maybe::Ref(r) => r.deref().hash(state),
-      Maybe::Owned(t) => t.hash(state),
-    }
+    (**self).hash(state)
   }
 }
 
@@ -835,10 +673,12 @@ impl<R, T> Maybe<R, T> {
   /// assert_eq!(&owned, "world");
   /// ```
   #[cfg_attr(not(tarpaulin), inline(always))]
+  #[cfg(any(feature = "alloc", feature = "std"))]
+  #[cfg_attr(docsrs, doc(cfg(any(feature = "alloc", feature = "std"))))]
   pub fn into_owned(self) -> T
   where
     R: Deref,
-    R::Target: ToOwned<Owned = T>,
+    R::Target: std::borrow::ToOwned<Owned = T>,
   {
     match self {
       Maybe::Ref(r) => r.deref().to_owned(),
@@ -858,62 +698,18 @@ impl<R, T> Maybe<R, T> {
   /// assert_eq!(owned, "hello");
   /// ```
   #[cfg_attr(not(tarpaulin), inline(always))]
+  #[cfg(any(feature = "alloc", feature = "std"))]
+  #[cfg_attr(docsrs, doc(cfg(any(feature = "alloc", feature = "std"))))]
   pub fn to_owned(&self) -> T
   where
     R: Deref,
-    T: Deref,
-    R::Target: ToOwned<Owned = T>,
-    T::Target: ToOwned<Owned = T>,
+    R::Target: std::borrow::ToOwned<Owned = T>,
+    T: Clone,
   {
     match self {
       Maybe::Ref(r) => r.deref().to_owned(),
-      Maybe::Owned(t) => t.deref().to_owned(),
+      Maybe::Owned(t) => t.clone(),
     }
-  }
-
-  /// Returns a helper type that implements `Deref<Target = T>` for `Maybe<R, T>`
-  /// where `R: Deref<Target = T>`.
-  ///
-  /// This allows `Maybe<&T, T>` (where T doesn't implement Deref) to still access
-  /// T's methods through deref coercion.
-  ///
-  /// # Example
-  ///
-  /// ```
-  /// use mayber::Maybe;
-  ///
-  /// #[derive(Clone)]
-  /// struct Lexed {
-  ///     value: String,
-  /// }
-  ///
-  /// impl Lexed {
-  ///     fn get_value(&self) -> &str {
-  ///         &self.value
-  ///     }
-  /// }
-  ///
-  /// let lexed = Lexed { value: "hello".to_string() };
-  /// let x: Maybe<&Lexed, Lexed> = Maybe::Ref(&lexed);
-  /// // Access methods through deref()
-  /// assert_eq!(x.deref().get_value(), "hello");
-  /// ```
-  #[cfg_attr(not(tarpaulin), inline(always))]
-  pub const fn deref(&self) -> MaybeDeref<'_, R, T>
-  where
-    R: Deref<Target = T>,
-  {
-    MaybeDeref(self)
-  }
-
-  /// Returns a helper type that implements `DerefMut<Target = T>` for `Maybe<R, T>`
-  /// where `R: DerefMut<Target = T>`.
-  #[cfg_attr(not(tarpaulin), inline(always))]
-  pub fn deref_mut(&mut self) -> MaybeDerefMut<'_, R, T>
-  where
-    R: DerefMut<Target = T>,
-  {
-    MaybeDerefMut(self)
   }
 }
 
@@ -1086,180 +882,119 @@ impl<R, T> Maybe<MaybeUninit<R>, MaybeUninit<T>> {
 const _: () = {
   use std::io::{BufRead, Read, Seek, Write};
 
-  impl<R, T> Write for Maybe<R, T>
+  impl<T> Write for MaybeMut<'_, T>
   where
-    R: DerefMut<Target = T>,
     T: Write,
   {
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-      match self {
-        Maybe::Ref(r) => r.deref_mut().write(buf),
-        Maybe::Owned(t) => t.write(buf),
-      }
+      (**self).write(buf)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn flush(&mut self) -> std::io::Result<()> {
-      match self {
-        Maybe::Ref(r) => r.deref_mut().flush(),
-        Maybe::Owned(t) => t.flush(),
-      }
+      (**self).flush()
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> {
-      match self {
-        Maybe::Ref(r) => r.deref_mut().write_vectored(bufs),
-        Maybe::Owned(t) => t.write_vectored(bufs),
-      }
+      (**self).write_vectored(bufs)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
-      match self {
-        Maybe::Ref(r) => r.deref_mut().write_all(buf),
-        Maybe::Owned(t) => t.write_all(buf),
-      }
+      (**self).write_all(buf)
     }
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn write_fmt(&mut self, args: std::fmt::Arguments<'_>) -> std::io::Result<()> {
-      match self {
-        Maybe::Ref(r) => r.deref_mut().write_fmt(args),
-        Maybe::Owned(t) => t.write_fmt(args),
-      }
+      (**self).write_fmt(args)
     }
   }
 
-  impl<R, T> Read for Maybe<R, T>
+  impl<T> Read for MaybeMut<'_, T>
   where
-    R: DerefMut<Target = T>,
     T: Read,
   {
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-      match self {
-        Maybe::Ref(r) => r.deref_mut().read(buf),
-        Maybe::Owned(t) => t.read(buf),
-      }
+      (**self).read(buf)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn read_vectored(&mut self, bufs: &mut [std::io::IoSliceMut<'_>]) -> std::io::Result<usize> {
-      match self {
-        Maybe::Ref(r) => r.deref_mut().read_vectored(bufs),
-        Maybe::Owned(t) => t.read_vectored(bufs),
-      }
+      (**self).read_vectored(bufs)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn read_to_end(&mut self, buf: &mut Vec<u8>) -> std::io::Result<usize> {
-      match self {
-        Maybe::Ref(r) => r.deref_mut().read_to_end(buf),
-        Maybe::Owned(t) => t.read_to_end(buf),
-      }
+      (**self).read_to_end(buf)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn read_to_string(&mut self, buf: &mut String) -> std::io::Result<usize> {
-      match self {
-        Maybe::Ref(r) => r.deref_mut().read_to_string(buf),
-        Maybe::Owned(t) => t.read_to_string(buf),
-      }
+      (**self).read_to_string(buf)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn read_exact(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
-      match self {
-        Maybe::Ref(r) => r.deref_mut().read_exact(buf),
-        Maybe::Owned(t) => t.read_exact(buf),
-      }
+      (**self).read_exact(buf)
     }
   }
 
-  impl<R, T> BufRead for Maybe<R, T>
+  impl<T> BufRead for MaybeMut<'_, T>
   where
-    R: DerefMut<Target = T>,
     T: BufRead,
   {
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
-      match self {
-        Maybe::Ref(r) => r.deref_mut().fill_buf(),
-        Maybe::Owned(t) => t.fill_buf(),
-      }
+      (**self).fill_buf()
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn consume(&mut self, amt: usize) {
-      match self {
-        Maybe::Ref(r) => r.deref_mut().consume(amt),
-        Maybe::Owned(t) => t.consume(amt),
-      }
+      (**self).consume(amt)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn read_until(&mut self, byte: u8, buf: &mut Vec<u8>) -> std::io::Result<usize> {
-      match self {
-        Maybe::Ref(r) => r.deref_mut().read_until(byte, buf),
-        Maybe::Owned(t) => t.read_until(byte, buf),
-      }
+      (**self).read_until(byte, buf)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     #[rustversion::since(1.83)]
     fn skip_until(&mut self, byte: u8) -> std::io::Result<usize> {
-      match self {
-        Maybe::Ref(r) => r.deref_mut().skip_until(byte),
-        Maybe::Owned(t) => t.skip_until(byte),
-      }
+      (**self).skip_until(byte)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn read_line(&mut self, buf: &mut String) -> std::io::Result<usize> {
-      match self {
-        Maybe::Ref(r) => r.deref_mut().read_line(buf),
-        Maybe::Owned(t) => t.read_line(buf),
-      }
+      (**self).read_line(buf)
     }
   }
 
-  impl<R, T> Seek for Maybe<R, T>
+  impl<T> Seek for MaybeMut<'_, T>
   where
-    R: DerefMut<Target = T>,
     T: Seek,
   {
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
-      match self {
-        Maybe::Ref(r) => r.deref_mut().seek(pos),
-        Maybe::Owned(t) => t.seek(pos),
-      }
+      (**self).seek(pos)
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn rewind(&mut self) -> std::io::Result<()> {
-      match self {
-        Maybe::Ref(r) => r.deref_mut().rewind(),
-        Maybe::Owned(t) => t.rewind(),
-      }
+      (**self).rewind()
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     fn stream_position(&mut self) -> std::io::Result<u64> {
-      match self {
-        Maybe::Ref(r) => r.deref_mut().stream_position(),
-        Maybe::Owned(t) => t.stream_position(),
-      }
+      (**self).stream_position()
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
     #[rustversion::since(1.80)]
     fn seek_relative(&mut self, offset: i64) -> std::io::Result<()> {
-      match self {
-        Maybe::Ref(r) => r.deref_mut().seek_relative(offset),
-        Maybe::Owned(t) => t.seek_relative(offset),
-      }
+      (**self).seek_relative(offset)
     }
   }
 };
@@ -1269,9 +1004,8 @@ const _: () = {
 const _: () = {
   use serde_core::{Deserialize, Deserializer, Serialize, Serializer};
 
-  impl<R, T> Serialize for Maybe<R, T>
+  impl<T> Serialize for MaybeRef<'_, T>
   where
-    R: Deref<Target = T>,
     T: Serialize,
   {
     #[cfg_attr(not(tarpaulin), inline(always))]
@@ -1279,10 +1013,20 @@ const _: () = {
     where
       S: Serializer,
     {
-      match self {
-        Maybe::Ref(r) => r.deref().serialize(serializer),
-        Maybe::Owned(t) => t.serialize(serializer),
-      }
+      (**self).serialize(serializer)
+    }
+  }
+
+  impl<T> Serialize for MaybeMut<'_, T>
+  where
+    T: Serialize,
+  {
+    #[cfg_attr(not(tarpaulin), inline(always))]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+      S: Serializer,
+    {
+      (**self).serialize(serializer)
     }
   }
 
