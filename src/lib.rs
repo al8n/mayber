@@ -17,6 +17,8 @@ use core::{
   ops::{Deref, DerefMut},
 };
 
+pub use crate::Maybe::{Owned, Ref};
+
 /// A type alias for a [`Maybe`] enum that holds either a reference or an owned value.
 ///
 /// This is the most common form of `Maybe`, representing either `&T` or `T`.
@@ -652,6 +654,51 @@ impl<R, T> Maybe<R, T> {
     match self {
       Maybe::Ref(r) => Maybe::Ref(r),
       Maybe::Owned(t) => Maybe::Owned(t),
+    }
+  }
+
+  /// Maps the contained value to an owned value.
+  ///
+  /// # Example
+  ///
+  /// ```
+  /// # #[cfg(feature = "std")] {
+  /// use mayber::Maybe;
+  ///
+  /// let x: Maybe<&str, String> = Maybe::Ref("hello");
+  /// let owned: String = x.map_to_owned(|s| s.to_string());
+  /// assert_eq!(owned, "hello");
+  /// # }
+  /// ```
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub fn map_into_owned(self, f: impl FnOnce(R) -> T) -> T {
+    match self {
+      Maybe::Ref(r) => f(r),
+      Maybe::Owned(t) => t,
+    }
+  }
+
+  /// Maps the contained value to a reference.
+  ///
+  /// # Example
+  ///
+  /// ```
+  /// # #[cfg(feature = "std")] {
+  /// use mayber::Maybe;
+  ///
+  /// let x: Maybe<&str, String> = Maybe::Owned("hello".to_string());
+  /// let r: &str = x.map_into_ref(|s| s.as_str());
+  /// assert_eq!(r, "hello");
+  /// # }
+  /// ```
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub fn map_into_ref<'a>(&'a self, f: impl FnOnce(&'a T) -> R) -> R
+  where
+    R: Clone,
+  {
+    match self {
+      Maybe::Ref(r) => r.clone(),
+      Maybe::Owned(t) => f(t),
     }
   }
 
