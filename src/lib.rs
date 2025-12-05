@@ -321,6 +321,26 @@ impl<T> Maybe<&mut T, T> {
   }
 }
 
+impl<T> Maybe<T, T> {
+  /// Converts the `Maybe<T, T>` into a `T`, consuming the `Maybe`.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub fn into_inner(self) -> T {
+    match self {
+      Maybe::Ref(r) => r,
+      Maybe::Owned(t) => t,
+    }
+  }
+
+  /// Converts the `Maybe<T, T>` into a `&T`.
+  #[cfg_attr(not(tarpaulin), inline(always))]
+  pub const fn as_inner(&self) -> &T {
+    match self {
+      Maybe::Ref(r) => r,
+      Maybe::Owned(t) => t,
+    }
+  }
+}
+
 impl<R, T> Maybe<R, T> {
   /// Returns `true` if the Maybe contains a reference
   #[cfg_attr(not(tarpaulin), inline(always))]
