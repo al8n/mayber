@@ -1,29 +1,27 @@
 [package]
-name = "template-rs"
-version = "0.0.0"
+name = "mayber"
+version = "0.1.0"
 edition = "2021"
-repository = "https://github.com/al8n/template-rs"
-homepage = "https://github.com/al8n/template-rs"
-documentation = "https://docs.rs/template-rs"
-description = "A template for creating Rust open-source repo on GitHub"
+repository = "https://github.com/al8n/mayber"
+homepage = "https://github.com/al8n/mayber"
+documentation = "https://docs.rs/mayber"
+description = "A zero-cost enum for handling either references or owned values with a unified interface"
 license = "MIT OR Apache-2.0"
-rust-version = "1.73"
-
-[[bench]]
-path = "benches/foo.rs"
-name = "foo"
-harness = false
+rust-version = "1.56"
+categories = ["data-structures", "rust-patterns", "no-std", "no-std::no-alloc"]
+keywords = ["reference", "maybe", "cow", "zero-cost", "deref"]
 
 [features]
 default = ["std"]
 alloc = []
 std = []
 
-[dependencies]
+serde = ["dep:serde_core"]
 
-[dev-dependencies]
-criterion = "0.7"
-tempfile = "3"
+[dependencies]
+rustversion = "1"
+
+serde_core = { version = "1", optional = true, default-features = false }
 
 [profile.bench]
 opt-level = 3
