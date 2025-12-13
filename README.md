@@ -86,8 +86,6 @@ See [LICENSE-APACHE](LICENSE-APACHE), [LICENSE-MIT](LICENSE-MIT) for details.
 
 Copyright (c) 2025 Al Liu.
 
-Copyright (c) 
-
 [Github-url]: https://github.com/al8n/mayber/
 [CI-url]: https://github.com/al8n/mayber/actions/workflows/ci.yml
 [doc-url]: https://docs.rs/mayber
