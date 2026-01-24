@@ -686,7 +686,7 @@ impl<R, T> Maybe<R, T> {
   /// use mayber::Maybe;
   ///
   /// let x: Maybe<&str, String> = Maybe::Ref("hello");
-  /// let owned: String = x.map_to_owned(|s| s.to_string());
+  /// let owned: String = x.map_into_owned(|s| s.to_string());
   /// assert_eq!(owned, "hello");
   /// # }
   /// ```
