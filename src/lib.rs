@@ -747,6 +747,8 @@ impl<R, T> Maybe<R, T> {
     R: Deref,
     R::Target: std::borrow::ToOwned<Owned = T>,
   {
+    use std::borrow::ToOwned;
+
     match self {
       Maybe::Ref(r) => r.deref().to_owned(),
       Maybe::Owned(t) => t,
@@ -773,6 +775,8 @@ impl<R, T> Maybe<R, T> {
     R::Target: std::borrow::ToOwned<Owned = T>,
     T: Clone,
   {
+    use std::borrow::ToOwned;
+
     match self {
       Maybe::Ref(r) => r.deref().to_owned(),
       Maybe::Owned(t) => t.clone(),
