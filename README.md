@@ -36,7 +36,19 @@ mayber = "0.1"
 
 - **`std`** (default): Standard library support with I/O traits (`Read`, `Write`, `Seek`, `BufRead`)
 - **`alloc`**: Allocation support for `no_std` environments
-- **`serde`**: `Serialize`/`Deserialize` implementations
+
+Optional integrations can be enabled by name or by their versioned feature (for example, `borsh` or `borsh_1`).
+
+| Features | What they provide | Minimum environment |
+| --- | --- | --- |
+| `serde` / `serde_1` | Untagged serialization via `serde_core`, decoding into `Owned(T)` | core |
+| `rkyv` / `rkyv_0_8` | Validated archives of `T` when `R: Borrow<T>`, including `MaybeRef` and `MaybeMut`. Both variants archive the same contents and decode into `Owned(T)`. | core |
+| `zerocopy` / `zerocopy_0_8` | `KnownLayout` and `Immutable` subject to the derive bounds | core |
+| `schemars` / `schemars_1` | JSON Schema for either payload on serialization and for `T` on deserialization | alloc |
+| `borsh` / `borsh_1` | Encodes the active payload directly and decodes as `Owned(T)`. A borrowed payload round-trips when its encoding is valid for `T`. | alloc |
+| `proptest` / `proptest_1` | Parameterized strategies for generating and shrinking pairs of arbitrary payload types | alloc |
+| `quickcheck` / `quickcheck_1` | Generates either variant and shrinks its payload | std |
+| `arbitrary` / `arbitrary_1` | Generates either variant from fuzz input, including payloads borrowed from the input | std |
 
 ```toml
 # With serde
@@ -54,6 +66,42 @@ mayber = { version = "0.1", default-features = false, features = ["alloc"] }
 - Need mutable reference or owned value flexibility (`MaybeMut`)
 - Reduce allocations in performance-critical paths
 
+Call `into_owned` when a function accepts either a borrowed or an owned span.
+A borrowed span is cloned once. An owned span moves out. This works in core-only builds.
+
+```rust
+use mayber::MaybeRef;
+
+fn own_span<T: Clone>(span: MaybeRef<'_, T>) -> T {
+    span.into_owned()
+}
+```
+
+| When you need to… | Use |
+| --- | --- |
+| Read or edit a field with different paths in the two representations | `fold_ref` or `fold_mut`. The result can borrow the field. |
+| Edit a slice shared by two mutable representations | `borrow_as_mut::<[T]>()`. Edits to a borrowed slice reach its source. |
+| Make a private editable copy on the first write | `make_owned_with`. Later edits reuse the owned payload. |
+| Copy borrowed input into fixed-capacity storage | `try_make_owned_with`. On a capacity error the borrowed input is still available. |
+| Parse or validate either payload while preserving its variant | `try_map`. Use `transpose` when the payloads already contain `Option` or `Result`. |
+
+For example, a packet header can borrow a slice until the first edit, then keep
+its own four bytes. The length check happens only during conversion.
+
+```rust
+use mayber::Maybe;
+
+let source = [1, 2, 3, 4];
+let mut header: Maybe<&[u8], [u8; 4]> = Maybe::Ref(&source);
+let bytes = header.try_make_owned_with(|src| <[u8; 4]>::try_from(*src)).unwrap();
+bytes[0] = 9;
+assert_eq!(header.unwrap_owned(), [9, 2, 3, 4]);
+assert_eq!(source[0], 1);
+```
+
+Converting a `MaybeMut<'a, T>` into a `MaybeRef<'a, T>` preserves the original
+borrow lifetime or moves the owned value.
+
 ## Comparison with `Cow`
 
 | Feature | `Cow<'a, T>` | `Maybe<R, T>` |
@@ -65,9 +113,9 @@ mayber = { version = "0.1", default-features = false, features = ["alloc"] }
 
 ## Trait Implementations
 
-- **`MaybeRef<T>`**: `Deref`, `AsRef`, `Borrow`, `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Clone`, `Copy`, `Hash`, `Debug`, `Display`
+- **`MaybeRef<T>`**: `Deref`, `AsRef`, `Borrow`, `From<&T>`, `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Hash`, `Debug`, `Display`. Comparison and hashing use the contents of either variant.
 - **`MaybeMut<T>`**: `Deref`, `DerefMut`, `AsRef`, `AsMut`, `Borrow`, `BorrowMut`, I/O traits (`std` feature)
-- **`Maybe<R, T>`**: `Default`, `From<T>`, `From<&T>`, `Deserialize` (`serde` feature)
+- **`Maybe<R, T>`** supports `From<T>` and implements `Default` when `T: Default`. It implements `Clone` or `Copy` when both payloads implement the corresponding trait. With Serde, serialization requires both payloads to implement `Serialize`, and deserialization requires only `T: Deserialize<'de>`.
 
 ## Credit
 
@@ -75,7 +123,11 @@ The original idea for this type comes from [chumsky](https://github.com/zesterer
 
 ## Minimum Supported Rust Version (MSRV)
 
-This crate requires Rust 1.56 or later.
+This crate requires Rust 1.85 or later.
+
+## Publishing
+
+The crates.io trusted publisher for `mayber` uses repository `al8n/mayber`, workflow `release.yml`, and GitHub environment `crates-io`. After CI and Coverage pass on the release commit on `main`, push a `vX.Y.Z` tag matching `Cargo.toml`. The release workflow checks the package and obtains a short-lived crates.io token using OIDC. A manual run on `main` performs the preflight only.
 
 #### License
 
