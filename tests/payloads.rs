@@ -45,14 +45,15 @@ fn mutable_traits_write_through_the_selected_representation() {
 }
 
 #[test]
-fn identical_payload_types_can_be_inspected_then_moved_out() {
-  for value in [
+fn identical_payload_types_can_be_edited_then_moved_out() {
+  for mut value in [
     Maybe::Ref(String::from("move")),
     Maybe::Owned(String::from("move")),
   ] {
     let ptr = value.as_inner().as_ptr();
+    value.as_inner_mut().make_ascii_uppercase();
     let inner = value.into_inner();
-    assert_eq!(inner, "move");
+    assert_eq!(inner, "MOVE");
     assert_eq!(inner.as_ptr(), ptr);
   }
 }

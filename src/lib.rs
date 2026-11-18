@@ -410,6 +410,9 @@ impl<R, T> Maybe<R, T> {
   /// fn name<'a>(entry: &'a Maybe<(&str, u8), String>) -> &'a str {
   ///     entry.fold_ref(|fields| fields.0, String::as_str)
   /// }
+  ///
+  /// assert_eq!(name(&Maybe::Ref(("span", 1))), "span");
+  /// assert_eq!(name(&Maybe::Owned(String::from("token"))), "token");
   /// ```
   #[inline]
   pub fn fold_ref<'a, U>(
