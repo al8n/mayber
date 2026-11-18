@@ -2,11 +2,15 @@ name: Release
 on:
   push:
     tags: ['v*']
+  pull_request:
+    paths:
+      - Cargo.toml
+      - .github/workflows/release.yml
   workflow_dispatch:
 
 permissions: {}
 concurrency:
-  group: crates-io-release
+  group: ${{ github.event_name == 'pull_request' && format('crates-io-preview-{0}', github.event.pull_request.number) || 'crates-io-release' }}
   cancel-in-progress: false
 
 jobs:
@@ -20,7 +24,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Verify release commit and package
+      - name: Verify release commit
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -38,7 +43,8 @@ jobs:
               -f branch=main -f head_sha="$commit" -f event=push \
               | jq -e '.workflow_runs | sort_by(.run_number) | last | .conclusion == "success"'
           done
-          cargo publish --dry-run
+      - name: Verify the crates.io package
+        run: cargo publish --dry-run
 
   publish:
     if: github.event_name == 'push'

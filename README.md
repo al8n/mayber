@@ -29,7 +29,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-mayber = "0.1"
+mayber = "0.2"
 ```
 
 ## Features
@@ -53,10 +53,10 @@ Optional integrations can be enabled by name or by their versioned feature (for 
 ```toml
 # With serde
 [dependencies]
-mayber = { version = "0.1", features = ["serde"] }
+mayber = { version = "0.2", features = ["serde"] }
 
 # no_std with alloc
-mayber = { version = "0.1", default-features = false, features = ["alloc"] }
+mayber = { version = "0.2", default-features = false, features = ["alloc"] }
 ```
 
 ## When to Use
