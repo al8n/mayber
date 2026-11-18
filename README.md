@@ -64,6 +64,11 @@ fn own_span<T: Clone>(span: MaybeRef<'_, T>) -> T {
 }
 ```
 
+Use `borrow_as` when the two payloads share a borrowed type, such as `str` for
+`Maybe<&str, String>`. Use `fold` when each payload needs a different operation
+to produce the same result. Converting a `MaybeMut<'a, T>` into a
+`MaybeRef<'a, T>` preserves the input lifetime or moves the owned value.
+
 ## Comparison with `Cow`
 
 | Feature | `Cow<'a, T>` | `Maybe<R, T>` |

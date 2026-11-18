@@ -1,5 +1,8 @@
 # UNRELEASED
 
+- Add `Maybe::fold`, `Maybe::borrow_as`, a const shared accessor on `MaybeMut`, and a consuming conversion from `MaybeMut` to `MaybeRef`.
+- Forward `clone_from` to the payload when the variant matches so reusable buffers can retain their allocation.
+- Report the caller's location when `unwrap_ref`, `unwrap_owned`, `expect_ref`, or `expect_owned` panics.
 - Extend `Clone` and `Copy` to arbitrary `Maybe<R, T>` payload pairs that implement the corresponding trait.
 - Extend Serde serialization to both payloads of any serializable pair. The untagged format and deserialization into `Owned` are unchanged.
 - Add the `serde_1` feature and forward the selected `alloc` and `std` features to Serde.
