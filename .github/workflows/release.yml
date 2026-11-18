@@ -1,0 +1,59 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions: {}
+concurrency:
+  group: crates-io-release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify release commit and package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version=$(cargo metadata --no-deps --format-version 1 | jq -er '.packages[] | select(.name == "mayber") | .version')
+          commit=$(git rev-parse HEAD)
+          git merge-base --is-ancestor "$commit" origin/main
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            [[ "$GITHUB_REF_NAME" == "v$version" ]]
+          else
+            [[ "$GITHUB_REF" == refs/heads/main ]]
+          fi
+          for workflow in ci.yml coverage.yml; do
+            gh api -X GET "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs" \
+              -f branch=main -f head_sha="$commit" -f event=push \
+              | jq -e '.workflow_runs | sort_by(.run_number) | last | .conclusion == "success"'
+          done
+          cargo publish --dry-run
+
+  publish:
+    if: github.event_name == 'push'
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+        id: auth
+      - run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}

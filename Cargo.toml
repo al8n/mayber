@@ -13,18 +13,47 @@ keywords = ["reference", "maybe", "cow", "zero-cost", "deref"]
 
 [features]
 default = ["std"]
-alloc = ["serde-core_1?/alloc"]
-std = ["serde-core_1?/std"]
+alloc = ["serde-core_1?/alloc", "rkyv_0_8?/alloc", "zerocopy_0_8?/alloc"]
+std = ["alloc", "serde-core_1?/std", "borsh_1?/std", "schemars_1?/std", "proptest_1?/std", "rkyv_0_8?/std", "zerocopy_0_8?/std"]
 
 serde = ["serde_1"]
 serde_1 = ["dep:serde-core_1"]
 
+quickcheck = ["quickcheck_1"]
+quickcheck_1 = ["dep:quickcheck_1", "std"]
+
+proptest = ["proptest_1"]
+proptest_1 = ["dep:proptest_1", "alloc"]
+
+arbitrary = ["arbitrary_1"]
+arbitrary_1 = ["dep:arbitrary_1", "std"]
+
+schemars = ["schemars_1"]
+schemars_1 = ["dep:schemars_1", "alloc"]
+
+borsh = ["borsh_1"]
+borsh_1 = ["dep:borsh_1", "alloc"]
+
+rkyv = ["rkyv_0_8"]
+rkyv_0_8 = ["dep:rkyv_0_8"]
+
+zerocopy = ["zerocopy_0_8"]
+zerocopy_0_8 = ["dep:zerocopy_0_8"]
+
 [dependencies]
-serde-core_1 = { package = "serde_core", version = "1", optional = true, default-features = false }
+serde-core_1 = { package = "serde_core", version = "1.0.229", optional = true, default-features = false }
+
+quickcheck_1 = { package = "quickcheck", version = "1.1.0", optional = true, default-features = false }
+proptest_1 = { package = "proptest", version = "1.11.0", optional = true, default-features = false, features = ["alloc", "no_std"] }
+arbitrary_1 = { package = "arbitrary", version = "1.5.0", optional = true, default-features = false }
+schemars_1 = { package = "schemars", version = "1.2.3", optional = true, default-features = false }
+borsh_1 = { package = "borsh", version = "1.8.1", optional = true, default-features = false }
+rkyv_0_8 = { package = "rkyv", version = "0.8.18", optional = true, default-features = false, features = ["bytecheck"] }
+zerocopy_0_8 = { package = "zerocopy", version = "0.8.63", optional = true, default-features = false, features = ["derive"] }
 
 [dev-dependencies]
 # Exercise each tier without the test codec enabling Serde's alloc or std support.
-postcard = { version = "1", default-features = false }
+postcard = { version = "1.1.3", default-features = false }
 
 [profile.bench]
 opt-level = 3

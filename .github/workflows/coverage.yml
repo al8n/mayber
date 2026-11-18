@@ -1,0 +1,47 @@
+name: Coverage
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install nightly --profile minimal --component llvm-tools-preview
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - name: Exercise core, alloc and std including doctests
+        run: |
+          cargo +nightly llvm-cov --no-report --doctests --no-default-features --features serde,rkyv,zerocopy
+          cargo +nightly llvm-cov --no-report --doctests --no-default-features --features alloc,serde,rkyv,zerocopy,borsh,schemars,proptest
+          cargo +nightly llvm-cov --no-report --doctests --all-features
+      - name: Report library line coverage
+        run: |
+          cargo +nightly llvm-cov report --doctests --lcov --output-path lcov.info
+          cargo +nightly llvm-cov report --doctests | tee coverage.txt
+          { echo '~~~'; cat coverage.txt; echo '~~~'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: |
+            lcov.info
+            coverage.txt
+          if-no-files-found: error
+      - uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: lcov.info
+          fail_ci_if_error: true
+      - name: Require 95 percent line coverage
+        run: cargo +nightly llvm-cov report --doctests --fail-under-lines 95

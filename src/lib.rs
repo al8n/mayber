@@ -88,6 +88,11 @@ pub type MaybeMut<'a, T> = Maybe<&'a mut T, T>;
 /// assert!(ref_variant.is_ref());
 /// assert!(owned_variant.is_owned());
 /// ```
+#[cfg_attr(
+  feature = "zerocopy_0_8",
+  derive(zerocopy_0_8::KnownLayout, zerocopy_0_8::Immutable)
+)]
+#[cfg_attr(feature = "zerocopy_0_8", zerocopy(crate = "zerocopy_0_8"))]
 #[derive(Copy)]
 pub enum Maybe<R, T> {
   /// A reference to a value
@@ -244,13 +249,13 @@ where
   }
 }
 
-impl<T> fmt::Debug for MaybeRef<'_, T>
-where
-  T: fmt::Debug,
-{
+impl<R: fmt::Debug, T: fmt::Debug> fmt::Debug for Maybe<R, T> {
   #[inline]
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    (**self).fmt(f)
+    match self {
+      Self::Ref(r) => r.fmt(f),
+      Self::Owned(t) => t.fmt(f),
+    }
   }
 }
 
@@ -1163,3 +1168,20 @@ const _: () = {
     }
   }
 };
+
+#[cfg(feature = "borsh_1")]
+mod borsh_impl;
+#[cfg(any(
+  feature = "arbitrary_1",
+  feature = "quickcheck_1",
+  feature = "proptest_1"
+))]
+mod generators;
+#[cfg(feature = "schemars_1")]
+mod schemars_impl;
+#[cfg(feature = "rkyv_0_8")]
+extern crate rkyv_0_8 as rkyv;
+#[cfg(feature = "rkyv_0_8")]
+mod rkyv_impl;
+#[cfg(feature = "rkyv_0_8")]
+pub use rkyv_impl::ArchivedMaybe;

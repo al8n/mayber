@@ -36,7 +36,19 @@ mayber = "0.1"
 
 - **`std`** (default): Standard library support with I/O traits (`Read`, `Write`, `Seek`, `BufRead`)
 - **`alloc`**: Allocation support for `no_std` environments
-- **`serde`** (alias for `serde_1`): serialize the active payload without a variant tag. Deserialization reads the owned payload type and returns `Maybe::Owned`. A borrowed payload can round-trip when its encoding can be read as the owned type.
+
+Optional integrations can be enabled by name or by their versioned feature (for example, `borsh` or `borsh_1`).
+
+| Features | What they provide | Minimum environment |
+| --- | --- | --- |
+| `serde` / `serde_1` | Untagged serialization via `serde_core`, decoding into `Owned(T)` | core |
+| `rkyv` / `rkyv_0_8` | Validated archives of `T` when `R: Borrow<T>`, including `MaybeRef` and `MaybeMut`. Both variants archive the same contents and decode into `Owned(T)`. | core |
+| `zerocopy` / `zerocopy_0_8` | `KnownLayout` and `Immutable` subject to the derive bounds | core |
+| `schemars` / `schemars_1` | JSON Schema for either payload on serialization and for `T` on deserialization | alloc |
+| `borsh` / `borsh_1` | Encodes the active payload directly and decodes as `Owned(T)`. A borrowed payload round-trips when its encoding is valid for `T`. | alloc |
+| `proptest` / `proptest_1` | Parameterized strategies for generating and shrinking pairs of arbitrary payload types | alloc |
+| `quickcheck` / `quickcheck_1` | Generates either variant and shrinks its payload | std |
+| `arbitrary` / `arbitrary_1` | Generates either variant from fuzz input, including payloads borrowed from the input | std |
 
 ```toml
 # With serde
@@ -91,6 +103,10 @@ The original idea for this type comes from [chumsky](https://github.com/zesterer
 ## Minimum Supported Rust Version (MSRV)
 
 This crate requires Rust 1.85 or later.
+
+## Publishing
+
+The crates.io trusted publisher for `mayber` uses repository `al8n/mayber`, workflow `release.yml`, and GitHub environment `crates-io`. After CI and Coverage pass on the release commit on `main`, push a `vX.Y.Z` tag matching `Cargo.toml`. The release workflow checks the package and obtains a short-lived crates.io token using OIDC. A manual run on `main` performs the preflight only.
 
 #### License
 
