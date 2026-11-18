@@ -52,6 +52,14 @@ jobs:
       - run: cargo +1.85.0 test --no-default-features --features "${{ matrix.features }}"
       - run: cargo +1.85.0 test --no-default-features --features "${{ matrix.integrations }}"
 
+  no-std:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup target add thumbv7em-none-eabi
+      - run: cargo check --lib --target thumbv7em-none-eabi --no-default-features --features serde,rkyv,zerocopy
+      - run: cargo check --lib --target thumbv7em-none-eabi --no-default-features --features alloc,serde,rkyv,zerocopy,borsh,schemars,proptest
+
   # Check formatting
   rustfmt:
     name: rustfmt
@@ -162,8 +170,7 @@ jobs:
       with:
         tool: cargo-hack
     - name: Run build
-      run: cargo hack build --each-feature --no-default-features
-    - run: cargo build --all-features
+      run: cargo hack build --each-feature
   
   test:
     name: test
