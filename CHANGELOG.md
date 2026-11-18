@@ -1,5 +1,9 @@
 # UNRELEASED
 
+- Make `into_owned` available for cloneable reference targets in core-only builds.
+- Add shared and mutable folding, mutable views, fallible mapping, and `Option` and `Result` transposition.
+- Add on-demand ownership conversion with `make_owned_with` and `try_make_owned_with`.
+
 - Add optional QuickCheck, proptest, arbitrary, Borsh, Schemars, rkyv, and zerocopy integrations.
 - Forward Debug formatting to either payload for all pairs with Debug implementations.
 

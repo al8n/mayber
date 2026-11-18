@@ -66,20 +66,41 @@ mayber = { version = "0.1", default-features = false, features = ["alloc"] }
 - Need mutable reference or owned value flexibility (`MaybeMut`)
 - Reduce allocations in performance-critical paths
 
-For a span that can arrive by reference or by value, `map_into_owned` works in core-only builds. The owned path moves the span and the borrowed path calls `Clone` once.
+Call `into_owned` when a function accepts either a borrowed or an owned span.
+A borrowed span is cloned once. An owned span moves out. This works in core-only builds.
 
 ```rust
 use mayber::MaybeRef;
 
 fn own_span<T: Clone>(span: MaybeRef<'_, T>) -> T {
-    span.map_into_owned(Clone::clone)
+    span.into_owned()
 }
 ```
 
-Use `borrow_as` when the two payloads share a borrowed type, such as `str` for
-`Maybe<&str, String>`. Use `fold` when each payload needs a different operation
-to produce the same result. Converting a `MaybeMut<'a, T>` into a
-`MaybeRef<'a, T>` preserves the input lifetime or moves the owned value.
+| When you need to… | Use |
+| --- | --- |
+| Read or edit a field with different paths in the two representations | `fold_ref` or `fold_mut`. The result can borrow the field. |
+| Edit a slice shared by two mutable representations | `borrow_as_mut::<[T]>()`. Edits to a borrowed slice reach its source. |
+| Make a private editable copy on the first write | `make_owned_with`. Later edits reuse the owned payload. |
+| Copy borrowed input into fixed-capacity storage | `try_make_owned_with`. On a capacity error the borrowed input is still available. |
+| Parse or validate either payload while preserving its variant | `try_map`. Use `transpose` when the payloads already contain `Option` or `Result`. |
+
+For example, a packet header can borrow a slice until the first edit, then keep
+its own four bytes. The length check happens only during conversion.
+
+```rust
+use mayber::Maybe;
+
+let source = [1, 2, 3, 4];
+let mut header: Maybe<&[u8], [u8; 4]> = Maybe::Ref(&source);
+let bytes = header.try_make_owned_with(|src| <[u8; 4]>::try_from(*src)).unwrap();
+bytes[0] = 9;
+assert_eq!(header.unwrap_owned(), [9, 2, 3, 4]);
+assert_eq!(source[0], 1);
+```
+
+Converting a `MaybeMut<'a, T>` into a `MaybeRef<'a, T>` preserves the original
+borrow lifetime or moves the owned value.
 
 ## Comparison with `Cow`
 

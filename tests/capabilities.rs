@@ -153,3 +153,128 @@ fn assume_init_preserves_the_variant_and_drops_each_payload_once() {
     assert_eq!(drops.get(), 1);
   }
 }
+
+#[test]
+fn into_owned_clones_only_borrowed_payloads_in_every_tier() {
+  struct Span<'a>(&'a Cell<u32>);
+  impl Clone for Span<'_> {
+    fn clone(&self) -> Self {
+      self.0.set(self.0.get() + 1);
+      Self(self.0)
+    }
+  }
+
+  let calls = Cell::new(0);
+  let mut original = Span(&calls);
+  let _ = MaybeRef::Ref(&original).into_owned();
+  let _ = MaybeMut::Ref(&mut original).into_owned();
+  assert_eq!(calls.get(), 2);
+  let owned = MaybeRef::Owned(original).into_owned();
+  let _ = MaybeMut::Owned(owned).into_owned();
+  assert_eq!(calls.get(), 2);
+}
+
+#[test]
+fn folds_lend_fields_of_heterogeneous_payloads() {
+  type Entry = Maybe<(String, usize), String>;
+  fn read(entry: &Entry) -> &str {
+    entry.fold_ref(|tuple| tuple.0.as_str(), String::as_str)
+  }
+  fn edit(entry: &mut Entry) -> &mut String {
+    entry.fold_mut(|tuple| &mut tuple.0, |s| s)
+  }
+  for mut entry in [
+    Entry::Ref((String::from("a"), 1)),
+    Entry::Owned(String::from("a")),
+  ] {
+    let was_ref = entry.is_ref();
+    edit(&mut entry).push('b');
+    assert_eq!(read(&entry), "ab");
+    assert_eq!(entry.is_ref(), was_ref);
+  }
+}
+
+#[test]
+fn common_mutable_view_writes_through_and_preserves_variant() {
+  let mut source = [1, 2];
+  let mut borrowed: Maybe<&mut [u8], Vec<u8>> = Maybe::Ref(&mut source);
+  borrowed.borrow_as_mut::<[u8]>()[0] = 7;
+  assert!(borrowed.is_ref());
+  assert_eq!(source, [7, 2]);
+  let mut owned: Maybe<&mut [u8], Vec<u8>> = Maybe::Owned(vec![4, 5]);
+  owned.borrow_as_mut::<[u8]>().reverse();
+  assert_eq!(owned.unwrap_owned(), [5, 4]);
+}
+
+#[test]
+fn failed_promotion_keeps_the_source_and_success_reuses_owned_storage() {
+  type Block<'a> = Maybe<&'a [u8], [u8; 2]>;
+  let source = [1, 2, 3];
+  let mut block = Block::Ref(&source);
+  assert!(block
+    .try_make_owned_with(|r| <[u8; 2]>::try_from(*r))
+    .is_err());
+  assert!(core::ptr::eq(
+    *block.as_maybe_ref().unwrap_ref(),
+    &source[..]
+  ));
+  let slot = block.make_owned_with(|r| [r[0], r[1]]);
+  slot[0] = 7;
+  let again = block
+    .try_make_owned_with::<()>(|_| panic!("already owned"))
+    .unwrap();
+  assert_eq!(again, &[7, 2]);
+  block.make_owned_with(|_| panic!("already owned"))[1] = 8;
+  assert_eq!(block.unwrap_owned(), [7, 8]);
+  assert_eq!(source, [1, 2, 3]);
+}
+
+#[test]
+fn transposing_moves_present_values_and_propagates_absence_or_errors() {
+  type O = Maybe<Option<String>, Option<u16>>;
+  assert_eq!(
+    O::Ref(Some(String::from("a")))
+      .transpose()
+      .unwrap()
+      .unwrap_ref(),
+    "a"
+  );
+  assert_eq!(O::Owned(Some(3)).transpose().unwrap().unwrap_owned(), 3);
+  assert!(O::Ref(None).transpose().is_none());
+  assert!(O::Owned(None).transpose().is_none());
+
+  type R = Maybe<Result<String, u8>, Result<u16, u8>>;
+  assert_eq!(
+    R::Ref(Ok(String::from("a")))
+      .transpose()
+      .unwrap()
+      .unwrap_ref(),
+    "a"
+  );
+  assert_eq!(R::Owned(Ok(3)).transpose().unwrap().unwrap_owned(), 3);
+  assert_eq!(R::Ref(Err(1)).transpose().unwrap_err(), 1);
+  assert_eq!(R::Owned(Err(2)).transpose().unwrap_err(), 2);
+}
+
+#[test]
+fn fallible_maps_only_run_the_selected_conversion() {
+  type Pair = Maybe<&'static str, u16>;
+  let mapped: Maybe<u8, u8> = Pair::Ref("17")
+    .try_map(str::parse, |_| unreachable!())
+    .unwrap();
+  assert_eq!(mapped.unwrap_ref(), 17);
+  let error = Pair::Owned(300).try_map(|_| -> Result<(), _> { unreachable!() }, u8::try_from);
+  assert!(error.is_err());
+}
+
+#[test]
+fn equal_payloads_can_be_edited_in_const_code() {
+  const fn update(mut value: Maybe<u8, u8>) -> Maybe<u8, u8> {
+    *value.as_inner_mut() += 1;
+    value
+  }
+  const LEFT: Maybe<u8, u8> = update(Maybe::Ref(2));
+  const RIGHT: Maybe<u8, u8> = update(Maybe::Owned(2));
+  assert!(matches!(LEFT, Maybe::Ref(3)));
+  assert!(matches!(RIGHT, Maybe::Owned(3)));
+}

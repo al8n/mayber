@@ -360,6 +360,14 @@ impl<T> Maybe<T, T> {
       Maybe::Owned(t) => t,
     }
   }
+
+  /// Mutably borrows the payload when both variants store the same type.
+  #[inline]
+  pub const fn as_inner_mut(&mut self) -> &mut T {
+    match self {
+      Self::Ref(value) | Self::Owned(value) => value,
+    }
+  }
 }
 
 impl<R, T> Maybe<R, T> {
@@ -377,13 +385,13 @@ impl<R, T> Maybe<R, T> {
 
   /// Applies the function for the active variant and returns its result.
   ///
-  /// Use [`Self::as_maybe_ref`] or [`Self::as_maybe_mut`] first to fold borrowed payloads.
+  /// Use [`Self::fold_ref`] or [`Self::fold_mut`] to keep the wrapper.
   ///
   /// ```
   /// use mayber::Maybe;
   ///
   /// let text: Maybe<&str, String> = Maybe::Ref("hello");
-  /// assert_eq!(text.as_maybe_ref().fold(|s| s.len(), String::len), 5);
+  /// assert_eq!(text.fold_ref(|s| s.len(), String::len), 5);
   /// ```
   #[inline]
   pub fn fold<U>(self, on_ref: impl FnOnce(R) -> U, on_owned: impl FnOnce(T) -> U) -> U {
@@ -391,6 +399,36 @@ impl<R, T> Maybe<R, T> {
       Self::Ref(value) => on_ref(value),
       Self::Owned(value) => on_owned(value),
     }
+  }
+
+  /// Applies one function to the active payload by shared reference.
+  /// The result can borrow from the payload for the lifetime of `self`.
+  ///
+  /// ```
+  /// use mayber::Maybe;
+  ///
+  /// fn name<'a>(entry: &'a Maybe<(&str, u8), String>) -> &'a str {
+  ///     entry.fold_ref(|fields| fields.0, String::as_str)
+  /// }
+  /// ```
+  #[inline]
+  pub fn fold_ref<'a, U>(
+    &'a self,
+    on_ref: impl FnOnce(&'a R) -> U,
+    on_owned: impl FnOnce(&'a T) -> U,
+  ) -> U {
+    self.as_maybe_ref().fold(on_ref, on_owned)
+  }
+
+  /// Applies one function to the active payload by mutable reference.
+  /// The result can be a mutable reference to part of the payload.
+  #[inline]
+  pub fn fold_mut<'a, U>(
+    &'a mut self,
+    on_ref: impl FnOnce(&'a mut R) -> U,
+    on_owned: impl FnOnce(&'a mut T) -> U,
+  ) -> U {
+    self.as_maybe_mut().fold(on_ref, on_owned)
   }
 
   /// Borrows the active payload as a type shared by both representations.
@@ -411,6 +449,25 @@ impl<R, T> Maybe<R, T> {
       Self::Ref(value) => value.borrow(),
       Self::Owned(value) => value.borrow(),
     }
+  }
+
+  /// Mutably borrows a common view of either payload, preserving the variant.
+  ///
+  /// ```
+  /// use mayber::Maybe;
+  ///
+  /// let mut source = [0, 1];
+  /// let mut bytes: Maybe<&mut [u8], [u8; 2]> = Maybe::Ref(&mut source);
+  /// bytes.borrow_as_mut::<[u8]>()[0] = 7;
+  /// assert_eq!(source, [7, 1]);
+  /// ```
+  #[inline]
+  pub fn borrow_as_mut<U: ?Sized>(&mut self) -> &mut U
+  where
+    R: BorrowMut<U>,
+    T: BorrowMut<U>,
+  {
+    self.fold_mut(BorrowMut::borrow_mut, BorrowMut::borrow_mut)
   }
 
   /// Maps a `Maybe<R, T>` to `Maybe<R2, T2>` by applying a function to the contained value.
@@ -437,6 +494,17 @@ impl<R, T> Maybe<R, T> {
       Maybe::Ref(r) => Maybe::Ref(ref_fn(r)),
       Maybe::Owned(t) => Maybe::Owned(owned_fn(t)),
     }
+  }
+
+  /// Applies the conversion for the active variant. Success preserves the variant
+  /// and failure returns the conversion error.
+  #[inline]
+  pub fn try_map<R2, T2, E>(
+    self,
+    on_ref: impl FnOnce(R) -> Result<R2, E>,
+    on_owned: impl FnOnce(T) -> Result<T2, E>,
+  ) -> Result<Maybe<R2, T2>, E> {
+    self.map(on_ref, on_owned).transpose()
   }
 
   /// Maps the reference variant by applying a function to it.
@@ -764,6 +832,37 @@ impl<R, T> Maybe<R, T> {
     }
   }
 
+  /// Returns a mutable reference to the owned payload, converting `Ref` once if needed.
+  ///
+  /// ```
+  /// use mayber::Maybe;
+  ///
+  /// let mut label: Maybe<&str, String> = Maybe::Ref("span");
+  /// label.make_owned_with(|s| String::from(*s)).push('!');
+  /// assert_eq!(label.unwrap_owned(), "span!");
+  /// ```
+  #[inline]
+  pub fn make_owned_with(&mut self, convert: impl FnOnce(&R) -> T) -> &mut T {
+    self
+      .try_make_owned_with(|r| Ok::<_, core::convert::Infallible>(convert(r)))
+      .unwrap_or_else(|never| match never {})
+  }
+
+  /// Returns a mutable reference to the owned payload. Calls `convert` only for
+  /// `Ref`. If conversion returns an error, the wrapper keeps its original payload.
+  #[inline]
+  pub fn try_make_owned_with<E>(
+    &mut self,
+    convert: impl FnOnce(&R) -> Result<T, E>,
+  ) -> Result<&mut T, E> {
+    let owned = match self {
+      Self::Ref(r) => convert(r)?,
+      Self::Owned(t) => return Ok(t),
+    };
+    *self = Self::Owned(owned);
+    Ok(self.as_maybe_mut().unwrap_owned())
+  }
+
   /// Maps the contained value to a reference.
   ///
   /// # Example
@@ -788,9 +887,22 @@ impl<R, T> Maybe<R, T> {
     }
   }
 
+  /// Moves out an owned payload or clones the target of the borrowed representation.
+  /// Available in core-only builds for `MaybeRef` and `MaybeMut` with `T: Clone`.
+  #[cfg(not(any(feature = "alloc", feature = "std")))]
+  #[inline]
+  pub fn into_owned(self) -> T
+  where
+    R: Deref<Target = T>,
+    T: Clone,
+  {
+    self.map_into_owned(|r| r.deref().clone())
+  }
+
   /// Extracts the owned data.
   ///
-  /// Clones the data if it is a reference variant, otherwise takes ownership.
+  /// Moves out an owned payload or calls `ToOwned` on the borrowed target.
+  /// In core-only builds, this method is available when `R: Deref<Target = T>` and `T: Clone`.
   ///
   /// # Example
   ///
@@ -814,11 +926,7 @@ impl<R, T> Maybe<R, T> {
     R::Target: std::borrow::ToOwned<Owned = T>,
   {
     use std::borrow::ToOwned;
-
-    match self {
-      Maybe::Ref(r) => r.deref().to_owned(),
-      Maybe::Owned(t) => t,
-    }
+    self.map_into_owned(|r| r.deref().to_owned())
   }
 
   /// Creates owned data from borrowed data, always cloning.
@@ -851,6 +959,12 @@ impl<R, T> Maybe<R, T> {
 }
 
 impl<R, T> Maybe<Option<R>, Option<T>> {
+  /// Moves the option outside the wrapper, preserving the variant of a present value.
+  #[inline]
+  pub fn transpose(self) -> Option<Maybe<R, T>> {
+    self.fold(|r| r.map(Maybe::Ref), |t| t.map(Maybe::Owned))
+  }
+
   /// Returns `true` if the `Maybe<Option<R>, Option<T>>` is `None`.
   ///
   /// # Example
@@ -939,6 +1053,15 @@ impl<R, T> Maybe<Option<R>, Option<T>> {
       Self::Ref(r) => Maybe::Ref(r.as_mut()),
       Self::Owned(t) => Maybe::Owned(t.as_mut()),
     }
+  }
+}
+
+impl<R, T, E> Maybe<Result<R, E>, Result<T, E>> {
+  /// Moves the result outside the wrapper. Successful values keep their variant,
+  /// and an error from either variant moves out directly.
+  #[inline]
+  pub fn transpose(self) -> Result<Maybe<R, T>, E> {
+    self.fold(|r| r.map(Maybe::Ref), |t| t.map(Maybe::Owned))
   }
 }
 
