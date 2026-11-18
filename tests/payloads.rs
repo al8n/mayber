@@ -105,7 +105,7 @@ fn mapping_and_recovering_a_variant_leaves_the_other_side_untouched() {
     .map_owned(|_| unreachable!());
   assert_eq!(left.try_unwrap_owned().unwrap_err().unwrap_ref(), 3);
   let right: Pair = Pair::Owned(8)
-    .map_ref(|_| unreachable!())
+    .map_ref(|_| -> u8 { unreachable!() })
     .map_owned(|v| v + 1);
   assert_eq!(right.try_unwrap_ref().unwrap_err().unwrap_owned(), 9);
   let moved = Pair::Ref(1).map(|v| v + 2, |v| v + 3);
