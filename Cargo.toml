@@ -7,21 +7,24 @@ homepage = "https://github.com/al8n/mayber"
 documentation = "https://docs.rs/mayber"
 description = "A zero-cost enum for handling either references or owned values with a unified interface"
 license = "MIT OR Apache-2.0"
-rust-version = "1.56"
+rust-version = "1.85"
 categories = ["data-structures", "rust-patterns", "no-std", "no-std::no-alloc"]
 keywords = ["reference", "maybe", "cow", "zero-cost", "deref"]
 
 [features]
 default = ["std"]
-alloc = []
-std = []
+alloc = ["serde-core_1?/alloc"]
+std = ["serde-core_1?/std"]
 
-serde = ["dep:serde_core"]
+serde = ["serde_1"]
+serde_1 = ["dep:serde-core_1"]
 
 [dependencies]
-rustversion = "1"
+serde-core_1 = { package = "serde_core", version = "1", optional = true, default-features = false }
 
-serde_core = { version = "1", optional = true, default-features = false }
+[dev-dependencies]
+# Exercise each tier without the test codec enabling Serde's alloc or std support.
+postcard = { version = "1", default-features = false }
 
 [profile.bench]
 opt-level = 3

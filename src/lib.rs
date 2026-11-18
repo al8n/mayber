@@ -56,6 +56,15 @@ pub type MaybeRef<'a, T> = Maybe<&'a T, T>;
 /// let mut owned = String::from("hello");
 /// modify(MaybeMut::Owned(owned));
 /// ```
+///
+/// Moving a mutable borrow preserves its exclusivity:
+///
+/// ```compile_fail
+/// use mayber::MaybeMut;
+/// let mut value = 0;
+/// let borrowed = MaybeMut::Ref(&mut value);
+/// let _ = Clone::clone(&borrowed);
+/// ```
 pub type MaybeMut<'a, T> = Maybe<&'a mut T, T>;
 
 /// An enum that can hold either a reference or an owned value.
@@ -79,6 +88,7 @@ pub type MaybeMut<'a, T> = Maybe<&'a mut T, T>;
 /// assert!(ref_variant.is_ref());
 /// assert!(owned_variant.is_owned());
 /// ```
+#[derive(Clone, Copy)]
 pub enum Maybe<R, T> {
   /// A reference to a value
   Ref(R),
@@ -242,21 +252,6 @@ where
     (**self).fmt(f)
   }
 }
-
-impl<T> Clone for MaybeRef<'_, T>
-where
-  T: Clone,
-{
-  #[cfg_attr(not(tarpaulin), inline(always))]
-  fn clone(&self) -> Self {
-    match self {
-      Maybe::Ref(r) => Maybe::Ref(*r),
-      Maybe::Owned(t) => Maybe::Owned(t.clone()),
-    }
-  }
-}
-
-impl<T> Copy for MaybeRef<'_, T> where T: Copy {}
 
 impl<T> core::hash::Hash for MaybeRef<'_, T>
 where
@@ -678,17 +673,20 @@ impl<R, T> Maybe<R, T> {
   }
 
   /// Maps the contained value to an owned value.
+  /// The closure runs only for `Ref`. An `Owned` value moves out directly.
   ///
   /// # Example
   ///
   /// ```
-  /// # #[cfg(feature = "std")] {
-  /// use mayber::Maybe;
+  /// use mayber::MaybeRef;
   ///
-  /// let x: Maybe<&str, String> = Maybe::Ref("hello");
-  /// let owned: String = x.map_into_owned(|s| s.to_string());
-  /// assert_eq!(owned, "hello");
-  /// # }
+  /// fn own_span<T: Clone>(span: MaybeRef<'_, T>) -> T {
+  ///     span.map_into_owned(Clone::clone)
+  /// }
+  ///
+  /// let span = 2..5;
+  /// assert_eq!(own_span(MaybeRef::Ref(&span)), 2..5);
+  /// assert_eq!(own_span(MaybeRef::Owned(span)), 2..5);
   /// ```
   #[cfg_attr(not(tarpaulin), inline(always))]
   pub fn map_into_owned(self, f: impl FnOnce(R) -> T) -> T {
@@ -868,8 +866,7 @@ impl<R, T> Maybe<Option<R>, Option<T>> {
   /// }
   /// ```
   #[cfg_attr(not(tarpaulin), inline(always))]
-  #[rustversion::attr(since(1.83), const)]
-  pub fn as_option_mut(&mut self) -> Maybe<Option<&mut R>, Option<&mut T>> {
+  pub const fn as_option_mut(&mut self) -> Maybe<Option<&mut R>, Option<&mut T>> {
     match self {
       Self::Ref(r) => Maybe::Ref(r.as_mut()),
       Self::Owned(t) => Maybe::Owned(t.as_mut()),
@@ -937,10 +934,10 @@ impl<R, T> Maybe<MaybeUninit<R>, MaybeUninit<T>> {
   /// subject to the usual drop handling.
   ///
   /// # Safety
-  /// See [`MaybeUninit::assume_init`](core::mem::MaybeUninit::assume_init).
+  /// The payload of the active variant must be fully initialized and valid for
+  /// its type, as required by [`MaybeUninit::assume_init`].
   #[cfg_attr(not(tarpaulin), inline(always))]
-  #[rustversion::attr(since(1.59), const)]
-  pub unsafe fn assume_init(self) -> Maybe<R, T> {
+  pub const unsafe fn assume_init(self) -> Maybe<R, T> {
     match self {
       Self::Ref(r) => Maybe::Ref(r.assume_init()),
       Self::Owned(t) => Maybe::Owned(t.assume_init()),
@@ -1032,7 +1029,6 @@ const _: () = {
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
-    #[rustversion::since(1.83)]
     fn skip_until(&mut self, byte: u8) -> std::io::Result<usize> {
       (**self).skip_until(byte)
     }
@@ -1063,20 +1059,20 @@ const _: () = {
     }
 
     #[cfg_attr(not(tarpaulin), inline(always))]
-    #[rustversion::since(1.80)]
     fn seek_relative(&mut self, offset: i64) -> std::io::Result<()> {
       (**self).seek_relative(offset)
     }
   }
 };
 
-#[cfg(feature = "serde")]
-#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+#[cfg(feature = "serde_1")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serde_1")))]
 const _: () = {
-  use serde_core::{Deserialize, Deserializer, Serialize, Serializer};
+  use serde_core_1::{Deserialize, Deserializer, Serialize, Serializer};
 
-  impl<T> Serialize for MaybeRef<'_, T>
+  impl<R, T> Serialize for Maybe<R, T>
   where
+    R: Serialize,
     T: Serialize,
   {
     #[cfg_attr(not(tarpaulin), inline(always))]
@@ -1084,20 +1080,10 @@ const _: () = {
     where
       S: Serializer,
     {
-      (**self).serialize(serializer)
-    }
-  }
-
-  impl<T> Serialize for MaybeMut<'_, T>
-  where
-    T: Serialize,
-  {
-    #[cfg_attr(not(tarpaulin), inline(always))]
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-      S: Serializer,
-    {
-      (**self).serialize(serializer)
+      match self {
+        Self::Ref(value) => value.serialize(serializer),
+        Self::Owned(value) => value.serialize(serializer),
+      }
     }
   }
 

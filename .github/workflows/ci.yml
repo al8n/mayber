@@ -28,6 +28,21 @@ env:
   stable: stable
 
 jobs:
+  msrv:
+    name: Rust 1.85 (${{ matrix.tier }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { tier: core, features: "", serde: serde_1 }
+          - { tier: alloc, features: alloc, serde: "alloc,serde" }
+          - { tier: std, features: std, serde: "std,serde" }
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup toolchain install 1.85.0 --profile minimal --no-self-update
+      - run: cargo +1.85.0 test --no-default-features --features "${{ matrix.features }}"
+      - run: cargo +1.85.0 test --no-default-features --features "${{ matrix.serde }}"
+
   # Check formatting
   rustfmt:
     name: rustfmt

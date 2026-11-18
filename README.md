@@ -36,7 +36,7 @@ mayber = "0.1"
 
 - **`std`** (default): Standard library support with I/O traits (`Read`, `Write`, `Seek`, `BufRead`)
 - **`alloc`**: Allocation support for `no_std` environments
-- **`serde`**: `Serialize`/`Deserialize` implementations
+- **`serde`** (alias for `serde_1`): serialize the active payload without a variant tag. Deserialization reads the owned payload type and returns `Maybe::Owned`. A borrowed payload can round-trip when its encoding can be read as the owned type.
 
 ```toml
 # With serde
@@ -54,6 +54,16 @@ mayber = { version = "0.1", default-features = false, features = ["alloc"] }
 - Need mutable reference or owned value flexibility (`MaybeMut`)
 - Reduce allocations in performance-critical paths
 
+For a span that can arrive by reference or by value, `map_into_owned` works in core-only builds. The owned path moves the span and the borrowed path calls `Clone` once.
+
+```rust
+use mayber::MaybeRef;
+
+fn own_span<T: Clone>(span: MaybeRef<'_, T>) -> T {
+    span.map_into_owned(Clone::clone)
+}
+```
+
 ## Comparison with `Cow`
 
 | Feature | `Cow<'a, T>` | `Maybe<R, T>` |
@@ -65,9 +75,9 @@ mayber = { version = "0.1", default-features = false, features = ["alloc"] }
 
 ## Trait Implementations
 
-- **`MaybeRef<T>`**: `Deref`, `AsRef`, `Borrow`, `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Clone`, `Copy`, `Hash`, `Debug`, `Display`
+- **`MaybeRef<T>`**: `Deref`, `AsRef`, `Borrow`, `From<&T>`, `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Hash`, `Debug`, `Display`. Comparison and hashing use the contents of either variant.
 - **`MaybeMut<T>`**: `Deref`, `DerefMut`, `AsRef`, `AsMut`, `Borrow`, `BorrowMut`, I/O traits (`std` feature)
-- **`Maybe<R, T>`**: `Default`, `From<T>`, `From<&T>`, `Deserialize` (`serde` feature)
+- **`Maybe<R, T>`** supports `From<T>` and implements `Default` when `T: Default`. It implements `Clone` or `Copy` when both payloads implement the corresponding trait. With Serde, serialization requires both payloads to implement `Serialize`, and deserialization requires only `T: Deserialize<'de>`.
 
 ## Credit
 
@@ -75,7 +85,7 @@ The original idea for this type comes from [chumsky](https://github.com/zesterer
 
 ## Minimum Supported Rust Version (MSRV)
 
-This crate requires Rust 1.56 or later.
+This crate requires Rust 1.85 or later.
 
 #### License
 
